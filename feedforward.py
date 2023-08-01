@@ -11,6 +11,7 @@ import torch.nn as nn
 import torchvision # for datasets
 import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
+from torch.utils.tensorboard import SummaryWriter
 
 # device config
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') # checks if compatible GPU is available
@@ -27,9 +28,16 @@ learning_rate = 0.001 # how much the model's parameters are updated
 train_dataset = torchvision.datasets.MNIST(root='./data', train=True, download=True,
     transform=transforms.ToTensor()) # dataset transformed into PyTorch tensors
 
+# Split training dataset into training set and validation set
+train_size = int(0.75 * len(train_dataset)) # 75% of data for training set
+valid_size = len(train_dataset) - train_size # 25% of data for validation set
+train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, valid_size])
 
 train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size,
     shuffle=True) # loads training dataset into batches
+
+valid_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size,
+    shuffle=False) # loads validation dataset into batches
 
 test_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size,
     shuffle=False) # used for testing and evaluation purposes
@@ -42,6 +50,8 @@ print(samples.shape, labels.shape)
 for i in range(6): # plot
     plt.subplot(2, 3, i+1)
     plt.imshow(samples[i][0], cmap='gray')
+
+plt.show()
 # plots six digits
 
 class NeuralNet(nn.Module):
@@ -63,9 +73,16 @@ model = NeuralNet(input_size, hidden_size, num_classes)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
+# SummaryWriter object for logging trained statistics
+
+writer = SummaryWriter(log_dir='logging')
+
 # training loop
 n_total_steps = len(train_loader)
 for epoch in range(num_epochs):
+    model.train() # training
+    total_train_loss = 0  # Variable to store the total training loss for this epoch
+
     for i, (images, labels) in enumerate(train_loader): # to get actual index
         # reshape image
         # current image is 100x1x28x28
@@ -82,8 +99,31 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
 
+        total_train_loss += loss.item()  # Accumulate the training loss for this batch
+        writer.add_scalar('Training Loss', loss.item(), epoch * n_total_steps + i)
+
         if (i+1) % 100 == 0:
             print(f'epoch {epoch+1} / {num_epochs}, step {i+1}/{n_total_steps}, loss = {loss.item():.5f}')
+
+    average_train_loss = total_train_loss / len(train_loader)  # Calculate the average training loss for this epoch
+    print(f'Training Loss after epoch {epoch + 1}: {average_train_loss:.5f}')
+
+    torch.save(model.state_dict(), 'trained_model.pth') # saves the trained model's params to disk
+
+    model.eval() # validating
+    with torch.no_grad():
+        total_valid_loss = 0
+        for images, labels in valid_loader:
+            images = images.reshape(-1, 28*28).to(device)
+            labels = labels.to(device)
+            outputs = model(images)
+            valid_loss = criterion(outputs, labels)
+            total_valid_loss += valid_loss.item()
+
+        if (i+1) % 100 == 0:
+            print(f'epoch {epoch+1} / {num_epochs}, step {i+1}/{n_total_steps}, loss = {loss.item():.5f}')
+        average_val_loss = total_valid_loss / len(valid_loader)
+        print(f'Validation Loss after epoch {epoch + 1}: {average_val_loss:.5f}')
 # test
 with torch.no_grad():
     n_correct = 0
@@ -100,4 +140,6 @@ with torch.no_grad():
 
     accuracy = 100.0 * n_correct / n_samples
     print(f'accuracy = {accuracy}')
+
+writer.close()
 
