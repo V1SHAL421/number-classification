@@ -6,6 +6,7 @@
 # Model evaluation
 # GPU support
 
+import os
 import torch
 import torch.nn as nn
 import torchvision # for datasets
@@ -23,36 +24,48 @@ num_classes = 10 # number of classes in classification task
 num_epochs = 3 # number of times the training dataset will be passed through NN during training
 batch_size = 100 # number of data samples inputted in nn at once
 learning_rate = 0.001 # how much the model's parameters are updated
+save_directory = '/models'
 
 # MNIST
-train_dataset = torchvision.datasets.MNIST(root='./data', train=True, download=True,
+try:
+    train_dataset = torchvision.datasets.MNIST(root='./data', train=True, download=True,
     transform=transforms.ToTensor()) # dataset transformed into PyTorch tensors
+except Exception as e:
+    print("Error loading MNIST dataset:", e); exit()
 
 # Split training dataset into training set and validation set
-train_size = int(0.75 * len(train_dataset)) # 75% of data for training set
-valid_size = len(train_dataset) - train_size # 25% of data for validation set
-train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, valid_size])
-
-train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size,
+try:
+    train_size = int(0.75 * len(train_dataset)) # 75% of data for training set
+    valid_size = len(train_dataset) - train_size # 25% of data for validation set
+    train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, valid_size])
+except Exception as e:
+    print("Error splitting MNIST dataset:", e); exit()
+try:
+    train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size,
     shuffle=True) # loads training dataset into batches
 
-valid_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size,
+    valid_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size,
     shuffle=False) # loads validation dataset into batches
 
-test_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size,
+    test_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size,
     shuffle=False) # used for testing and evaluation purposes
+except Exception as e:
+    print("Error creating data loaders:", e); exit()
 
-examples = iter(train_loader) # allows you to iterate over the batches of the training dataset
-samples, labels = next(iter(train_loader)) # fetches first batch of data
+try:
+    examples = iter(train_loader) # allows you to iterate over the batches of the training dataset
+    samples, labels = next(iter(train_loader)) # fetches first batch of data
 
-print(samples.shape, labels.shape)
+    print(samples.shape, labels.shape) 
 
-for i in range(6): # plot
-    plt.subplot(2, 3, i+1)
-    plt.imshow(samples[i][0], cmap='gray')
+    for i in range(6): # plot
+        plt.subplot(2, 3, i+1)
+        plt.imshow(samples[i][0], cmap='gray')
 
-plt.show()
+    plt.show()
 # plots six digits
+except Exception as e:
+    print("Error displaying example plot:", e) # No need to call exit() since it won't interfere with the execution of the model
 
 class NeuralNet(nn.Module):
     def __init__(self, input_size, hidden_size, num_classes):
@@ -79,52 +92,61 @@ writer = SummaryWriter(log_dir='logging')
 
 # training loop
 n_total_steps = len(train_loader)
+
 for epoch in range(num_epochs):
-    model.train() # training
-    total_train_loss = 0  # Variable to store the total training loss for this epoch
+        model.train() # training
+        total_train_loss = 0  # Variable to store the total training loss for this epoch
 
-    for i, (images, labels) in enumerate(train_loader): # to get actual index
-        # reshape image
-        # current image is 100x1x28x28
-        # 100x784
-        images = images.reshape(-1, 28*28).to(device)
-        labels = labels.to(device)
+        for i, (images, labels) in enumerate(train_loader): # to get actual index
+            # reshape image
+            # current image is 100x1x28x28
+            # 100x784
+            try:
+                images = images.reshape(-1, 28*28).to(device)
+                labels = labels.to(device)
 
-        # forward
-        outputs = model(images)
-        loss = criterion(outputs, labels)
+                # forward
+                outputs = model(images)
+                loss = criterion(outputs, labels)
 
-        # backwards
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+                # backwards
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-        total_train_loss += loss.item()  # Accumulate the training loss for this batch
-        writer.add_scalar('Training Loss', loss.item(), epoch * n_total_steps + i)
+                total_train_loss += loss.item()  # Accumulate the training loss for this batch
+                writer.add_scalar('Training Loss', loss.item(), epoch * n_total_steps + i)
 
-        if (i+1) % 100 == 0:
-            print(f'epoch {epoch+1} / {num_epochs}, step {i+1}/{n_total_steps}, loss = {loss.item():.5f}')
+                if (i+1) % 100 == 0:
+                    print(f'epoch {epoch+1} / {num_epochs}, step {i+1}/{n_total_steps}, loss = {loss.item():.5f}')
+           
+            except Exception as e:
+                print(f"Error in training loop iteration {i}:", e)
 
-    average_train_loss = total_train_loss / len(train_loader)  # Calculate the average training loss for this epoch
-    print(f'Training Loss after epoch {epoch + 1}: {average_train_loss:.5f}')
+        average_train_loss = total_train_loss / len(train_loader)  # Calculate the average training loss for this epoch
+        print(f'Training Loss after epoch {epoch + 1}: {average_train_loss:.5f}')
+        try:
+            file_path = os.path.join(save_directory, 'trained_model.pth')
+            torch.save(model.state_dict(), file_path) # saves the trained model's params to disk
+            
+        except Exception as e:
+            print(f"Error saving the model parameters for epoch {epoch + 1}: {e}")
 
-    torch.save(model.state_dict(), 'trained_model.pth') # saves the trained model's params to disk
+        model.eval() # validating
+        with torch.no_grad():
+            total_valid_loss = 0
+            for images, labels in valid_loader:
+                images = images.reshape(-1, 28*28).to(device)
+                labels = labels.to(device)
+                outputs = model(images)
+                valid_loss = criterion(outputs, labels)
+                total_valid_loss += valid_loss.item()
 
-    model.eval() # validating
-    with torch.no_grad():
-        total_valid_loss = 0
-        for images, labels in valid_loader:
-            images = images.reshape(-1, 28*28).to(device)
-            labels = labels.to(device)
-            outputs = model(images)
-            valid_loss = criterion(outputs, labels)
-            total_valid_loss += valid_loss.item()
-
-        if (i+1) % 100 == 0:
-            print(f'epoch {epoch+1} / {num_epochs}, step {i+1}/{n_total_steps}, loss = {loss.item():.5f}')
-        average_val_loss = total_valid_loss / len(valid_loader)
-        print(f'Validation Loss after epoch {epoch + 1}: {average_val_loss:.5f}')
-# test
+            if (i+1) % 100 == 0:
+                print(f'epoch {epoch+1} / {num_epochs}, step {i+1}/{n_total_steps}, loss = {loss.item():.5f}')
+            average_val_loss = total_valid_loss / len(valid_loader)
+            print(f'Validation Loss after epoch {epoch + 1}: {average_val_loss:.5f}')
+    # test
 with torch.no_grad():
     n_correct = 0
     n_samples = 0
